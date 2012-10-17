@@ -1,0 +1,52 @@
+<html>
+	<head>
+		<meta encoding="utf-8">
+		<title>d3.js</title>
+		<script src="underscore.js"></script>
+		<script src="d3.js"></script>
+		<script src="three.js"></script>
+	</head>
+	<body>
+
+		<script>
+			var container = document.body;
+
+			var fieldOfView = 45, nearClip = 0.1, farClip = 10000;
+
+			var width = 600, height = 600, aspectRatio = width/height;
+
+			var renderer = new THREE.WebGLRenderer();
+			var camera = new THREE.PerspectiveCamera(
+				fieldOfView, aspectRatio, nearClip, farClip
+			);
+
+			camera.position.z = 100;
+
+			var scene = new THREE.Scene();
+
+			renderer.setSize(width,height);
+			container.appendChild(renderer.domElement);
+			var cubey = new THREE.Mesh(
+				new THREE.CubeGeometry(25, 25, 25),
+				new THREE.MeshPhongMaterial({
+					color: 0x0000CC
+				})
+			);
+			scene.add(cubey); 
+			var light = new THREE.PointLight();
+			light.position.x = 50;
+			light.position.y = 50;
+			light.position.z = 25;
+			scene.add(light);
+
+			var clock = THREE.Clock();
+			var tick = function(t) {
+				requestAnimationFrame(tick);
+				cubey.rotation.y = t/1000;
+				renderer.render(scene,camera);
+			};
+			tick();
+		</script>
+	</body>
+</html>
+

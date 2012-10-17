@@ -1,0 +1,36 @@
+<html>
+	<head>
+		<meta encoding="utf-8">
+		<title>d3.js</title>
+		<script src="underscore.js"></script>
+		<script src="d3.js"></script>
+	</head>
+	<body>
+
+		<script>
+			var data = [
+				{text: "A premade header"}
+			];
+			var render = function() {
+				d3.select("body")
+					.selectAll("h1")
+					.data(data)
+					.enter()
+						.append("h1")
+						.style("opacity",1e-6)
+						.text(function(d) {
+							return d.text;
+						})
+						.transition()
+						.style("opacity",1)
+						;
+			};
+			var update = function() {
+				data.push({text:"A header made at " + new Date});
+				render();
+			};
+			setInterval(update,2000);
+			render();
+		</script>
+	</body>
+</html>
