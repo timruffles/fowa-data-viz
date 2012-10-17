@@ -1,0 +1,1251 @@
+<head>
+  <meta encoding='utf-8' />
+  <title>Create Beautiful Data Visualisations with Javascript</title>
+  <link href='css/screen.css' rel='stylesheet' />
+  <script src='underscore.js'></script>
+  <script src='d3.js'></script>
+  <script type='text/javascript'>
+    //<![CDATA[
+      // creates a function that'll return the value of, or call, a named property on any object
+      // passed to it
+      function pluck(v) {
+        var args = [].slice.call(arguments,1);
+        return function(d) {
+          return typeof(d[v]) === "function" ? d[v].apply(d,args) : d[v];
+        }
+      }
+      
+      function pluck(key) {
+        return function(o) {
+          return o[key];
+        }
+      }
+      
+      
+      // the identity function - returns an object passed to it
+      function I(x) { return x }
+      
+      function px(fn) {
+        return function() {
+          return fn.apply(null,arguments) + "px"
+        }
+      };
+      
+      var onPageCbs = [];
+      var onPage = function (page,fn) {
+        onPageCbs.push([page,fn])
+      }
+      
+      function revealCode(id,fn) {
+        var el = document.getElementById(id); 
+        fn || (fn = function(code,script,page) {
+          page.appendChild(script);
+        });
+        // first script
+        var script = el.querySelector("script");
+        var code = script.innerText
+          .split("\n")
+          .slice(3) // remove cdata & onPage
+          .slice(0,-3) // remove cdata & onPage
+          .map(function(s) { return s.replace(/^    /,"") }).join("\n");
+        var pre = document.createElement("pre");
+        pre.innerText = code;
+        fn(code,pre,el); 
+        prettyPrint();
+      }
+      
+      var peeks = 0;
+      function peek(fn,name) {
+        name || (name = "peek" + (++peeks));
+        return function() {
+          console.log(name,arguments);
+          return fn.apply(null,arguments);
+        }
+      }
+    //]]>
+  </script>
+</head>
+<body>
+  <section>
+    <h1>Create Beautiful Data Visualisations with Javascript</h1>
+  </section>
+  <section id='intro-venn'>
+    <h2 id='covering'>
+      We'll be covering
+    </h2>
+    <div id='venn'></div>
+    <style>
+      #venn {
+        font-size: 0.35em; }
+      
+      #covering {
+        float: right;
+        width: 30%; }
+    </style>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("intro-venn",_.once(function() {
+        
+        var data = [
+          {
+            name: "Data",
+            children: [
+              { name: "d3.scale" },
+              { name: "d3 array methods" },
+              { name: "d3 data loaders" },
+              { name: "unix" },
+              { name: "Google spreadsheet" },
+            ]
+          },
+          {
+            name: "Documents",
+            children: [
+              { name: "DOM" },
+              { name: "SVG" },
+              { name: "three.js" },
+            ]
+          },
+          {
+            name: "Design",
+            children: [
+              { name: "Colour" },
+              { name: "d3.layout" },
+              { name: "Principles" },
+              { name: "Process" }
+            ]
+          }
+        ];
+        
+        data.forEach(function(d) {
+          d.children.forEach(function(c) {
+            c.parent = d;
+          });
+        });
+        
+        var plucker = function(v) {
+          return function(o) {
+            return o[v];
+          }
+        };
+        var translate = function(x,y) {
+          return "translate(" + x + "," + y + ")";
+        };
+        
+        var venn = function(opts) {
+        
+          var data = opts.data;
+          var spread = opts.spread;
+          var width = opts.width;
+          var height = opts.height;
+          var radius = opts.radius;
+          var center = {x:width/2,y:height/2};
+        
+          var sin = Math.sin;
+          var cos = Math.cos;
+          var PI = Math.PI;
+        
+          var radsPerSegment = Math.PI * 2 / data.length;
+        
+          var segment = d3.scale.ordinal().range(["#AB00D9","#FFF600","#009EEF"]).domain(d3.range(0,data.length - 1));
+        
+          var g = d3.select("#venn")
+                    .append("svg")
+                    .attr("width",width)
+                    .attr("height",height)
+                    .append("g");
+        
+          var venn = g.selectAll("circle")
+                      .data(data);
+        
+          var segmentAngle = function(i) {
+            var verticalZero = 0.5 * Math.PI;
+            return (i * radsPerSegment) - verticalZero;
+          };
+        
+          var enter = venn.enter()
+            .append("g")
+            .attr("transform",function(d,i) {
+              var centerRadius = radius - spread;
+              var x = cos(segmentAngle(i)) * centerRadius + center.x;
+              var y = sin(segmentAngle(i)) * centerRadius + center.y;
+              return translate(x,y);
+            });
+        
+          enter.append("svg:circle")
+            .style("fill",function(d,i) {
+              return segment(i)
+            })
+            .attr("opacity",0.6)
+            .attr("r",radius)
+            .on("mouseover",function() {
+              d3.select(this).transition().attr("r",radius + 5);
+            })
+            .on("mouseout",function() {
+              d3.select(this).transition().attr("r",radius);
+            })
+            ;
+        
+          enter.append("svg:text")
+            .text(plucker("name"))
+            .attr("transform",function(d,i) {
+              return translate(-this.offsetWidth/2,this.offsetHeight/2);
+            });
+          ;
+        
+          enter
+            .selectAll("text.children")
+            .data(plucker("children"))
+            .enter()
+            .append("g")
+              .attr("transform",function(d,i) {
+                var pindex = data.indexOf(d.parent);
+                var start = segmentAngle(pindex) - radsPerSegment / 2;
+                var end = segmentAngle(pindex) + radsPerSegment / 2;
+                var anglePerCategory = (end - start) / d.parent.children.length;
+                var angle = i * anglePerCategory + (anglePerCategory / 2) + start;
+                var textRadius = radius + 10;
+                d.angleRadians = angle;
+                return translate(cos(angle) * textRadius,sin(angle) * textRadius) + " rotate(" + angle * 57.2957795 + ")";
+              })
+              .append("text")
+              .text(plucker("name"))
+              .attr("transform",function(d) {
+                var piRads = d.angleRadians / PI;
+                if((piRads < -0.5 && piRads >= -1) || (piRads >= 0.5 && piRads < 1.5)) {
+                  return "matrix(-1,0,0,-1," + this.clientWidth + ",0)";
+                } 
+                return "";
+              });
+        
+        
+        };
+        
+        venn({
+          data: data,
+          spread: 15,
+          width: 800,
+          height: 800,
+          radius: 120,
+        });
+        
+        }));
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>Schedule</h2>
+    <pre> 9.00   Intro&#x000A; 9.05   A design principle&#x000A; 9.10   Grabbing &amp; transforming your data&#x000A; 9.30   With data, decide on and sketch design&#x000A;10.30   Break&#x000A;11.00   Learning: d3&#x000A;12.30   Lunch&#x000A;13.30   Build with d3&#x000A;15.00   Break&#x000A;15.30   Three.js &amp; adding the z-axis&#x000A;16.00   Continue with visualisations&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Workshop</h2>
+    <p>Hands on - you'll have a data visualisation done by the end of the day.</p>
+    <p>d3 is BIG.</p>
+    <p>3D graphics is BIGGER.</p>
+    <p>Data visualisation is a contact sport - emphasis on coding.</p>
+  </section>
+  <section>
+    <h2>Morning</h2>
+    <p>First get some data you're interested in</p>
+    <p>Clean it up, investigate it</p>
+    <p>Design a visualisation around it</p>
+  </section>
+  <section>
+    <h2>Before and after lunch</h2>
+    <p>I'll introduce d3.js and take you through lots of examples</p>
+    <p>Break for lunch</p>
+    <p>Come back and build with d3.js until afternoon break</p>
+  </section>
+  <section>
+    <h2>After afternoon break</h2>
+    <p>I'll introduce three.js</p>
+    <p>Continue with d3</p>
+    <p>or add three.js</p>
+    <p>or make a wholly 3D viz!</p>
+  </section>
+  <section>
+    <h2>Questions</h2>
+    <p>I'll take questions after each tech intro</p>
+    <p>I'll wander around during the build sessions to help</p>
+    <p>Any questions before we begin?</p>
+  </section>
+  <section>
+    <h2>Schedule</h2>
+    <pre> 9.00   Intro&#x000A; 9.05   A design principle&#x000A; 9.10   Grabbing &amp; transforming your data&#x000A; 9.30   With data, decide on and sketch design&#x000A;10.30   Break&#x000A;11.00   Learning: d3&#x000A;12.30   Lunch&#x000A;13.30   Build with d3&#x000A;15.00   Break&#x000A;15.30   Three.js &amp; adding the z-axis&#x000A;16.00   Continue with visualisations&#x000A;</pre>
+  </section>
+  <section>
+    <h1>One design principle to rule them all</h1>
+  </section>
+  <section>
+    <h2>Don't confuse with data</h2>
+    <img class='center' src='img/fox-news-lying-with-data.png' />
+  </section>
+  <section>
+    <h2>So up 400%?</h2>
+    <img class='center' src='img/fox-news-lying-with-data.png' />
+    <h2>No 35 - 39.6%. Up 13%.</h2>
+  </section>
+  <section>
+    <h2>Mostly unintentional.</h2>
+    <img class='center' src='img/donut-fail.jpeg' />
+  </section>
+  <section>
+    <h2>Telling the right story</h2>
+    <p>Could easily create the 400% visually, 13% actually with inappropriate scale.</p>
+    <p>Good heuristic: do the visual cues match the story in the data?</p>
+  </section>
+  <section>
+    <h2>$0.71 is at least 60% of $3.83, right?</h2>
+    <img src='img/fnc-taxesatpump.jpeg' style='display:block;margin:0 auto;' />
+    <p>
+      Oh, and it's double counting. In two places.
+      <a href='http://mediamatters.org/blog/2012/03/16/another-whopper-from-foxs-graphics-department/185186'>Maybe not a mistake then...</a>
+    </p>
+  </section>
+  <section>
+    <h2>Pro</h2>
+    <img src='img/fox-pie-fail.jpeg' style='display:block;margin:0 auto;' />
+  </section>
+  <section>
+    <h1>Getting the data</h1>
+  </section>
+  <section>
+    <h2>Can't visualise what's not there</h2>
+    <p>Know your data before you design</p>
+    <p>Let's walk through an example of getting &amp; preparing it</p>
+  </section>
+  <section>
+    <h2>History data</h2>
+    <img class='center' src='img/why-west-rules.jpeg' width='400' />
+  </section>
+  <section>
+    <h2>Problem</h2>
+    <p>Lot of interesting data and argument</p>
+    <p>However - hard to take in via prose</p>
+  </section>
+  <section id='history'>
+    <h2>Social development over time</h2>
+    <div id='history-viz'></div>
+    <script src='history_data.js'></script>
+    <script src='history_viz.js'></script>
+    <style>
+      #history-viz {
+        margin-left: 10%;
+        font-size: 0.4em; }
+        #history-viz ul {
+          float: left;
+          width: 45%; }
+          #history-viz ul li {
+            cursor: pointer; }
+        #history-viz .x-axis {
+          font-size: 0.5em; }
+          #history-viz .x-axis path {
+            fill: none;
+            stroke: black; }
+        #history-viz input[type=checkbox] {
+          margin-left: 5px; }
+        #history-viz path.series {
+          stroke: red;
+          stroke-width: 3px;
+          fill: none; }
+        #history-viz rect {
+          fill: white;
+          -webkit-transition: all 0.1s; }
+        #history-viz rect:hover {
+          fill: #dddddd; }
+        #history-viz .chart-element {
+          position: absolute;
+          -webkit-transition: all 0.5s; }
+        #history-viz .inactive-series {
+          -webkit-filter: blur(6px);
+          opacity: 0.2; }
+        #history-viz #chart-root {
+          position: relative; }
+    </style>
+  </section>
+  <section>
+    <h2>The tasty data is seldom in JSON</h2>
+  </section>
+  <section>
+    <h2>PDF</h2>
+    <img class='center' src='img/pdf-data.png' width='400' />
+    <pre class='small'>14,000 BCE    4.36     0.00    0.00    0.00    4.36&#x000A;13,000 BCE    4.36    0.00    0.00    0.00    4.36&#x000A;12,000 BCE    4.90    0.00    0.00    0.00    4.90&#x000A;11,000 BCE    5.45    0.00    0.00    0.00    5.45&#x000A;10,000 BCE    5.45    0.00    0.00    0.00    5.45&#x000A;9000 BCE    5.99    0.00    0.00    0.00    5.99&#x000A;8000 BCE    6.54    0.00    0.00    0.00    6.54&#x000A;7000 BCE    7.08     0.01    0.00    0.00    7.09&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Get some interesting data</h2>
+    <p>http://en.wikipedia.org/wiki/World_population</p>
+    <img class='center' src='img/world-pop.png' />
+  </section>
+  <section>
+    <h2>Gather a mighty team of tools</h2>
+    <img class='center' src='img/superheroes.jpeg' />
+  </section>
+  <section>
+    <h2>Clean up</h2>
+    <pre>70,000 BC	< 0.015		[102]&#x000A;10,000 BC	1&#x000A;9000 BC	3							&#x000A;8000 BC	5		[103]&#x000A;7000 BC	7							&#x000A;6000 BC	10							&#x000A;</pre>
+    <pre>pbpaste | &#x000A; awk 'BEGIN { OFS="\t"; FS="\t" } {print $1,$2}' | &#x000A; sed 's/\([0-9,]+\) BC/-\1/g' | &#x000A; sed 's/AD //' |&#x000A; tr -d ","&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Result</h2>
+    <p>Normalised dates</p>
+    <pre>-70000	< 0.015&#x000A;-10000	1&#x000A;-9000	3&#x000A;-8000	5&#x000A;-7000	7&#x000A;-6000	10&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Cleaning data with *nix</h2>
+    <ul>
+      <li>unix intro</li>
+      <li>pbpaste, pbcopy</li>
+      <li>pipes</li>
+      <li>awk</li>
+      <li>sed</li>
+      <li>Google Spreadsheets &amp; JSONP</li>
+    </ul>
+  </section>
+  <section>
+    <h2>Do one thing well</h2>
+    <img class='center' src='img/superheroes.jpeg' />
+    <p>Like superheros, each little program has a superpower</p>
+    <p>Combine little programs to do complex things</p>
+  </section>
+  <section>
+    <h2>Unix - pipes</h2>
+    <p>Programs can form pipelines</p>
+    <p>Pipes take thing out and send them out</p>
+    <pre>$ program_a | program_b | program_c</pre>
+    <p>from program_a -> program_b -> program_c</p>
+    <pre>result = program_c(program_b(program_a()))</pre>
+  </section>
+  <section>
+    <h2>Clipboard - pbpaste, pbcopy</h2>
+    <p>Clipboard to/from command line</p>
+    <p>Grab straight from PDF/Wikipedia</p>
+    <p>Linux with XWindows</p>
+    <pre>alias pbcopy='xclip -selection clipboard'&#x000A;alias pbpaste='xclip -selection clipboard -o'&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Speed data retrieval</h2>
+    <p>Copy from Wikipedia/PDFs/HTML tables</p>
+    <pre>pbpaste > file_name.tsv&#x000A;</pre>
+    <p>Then process via tools</p>
+  </section>
+  <section>
+    <h2>awk</h2>
+    <img class='center' src='img/table-death.png' />
+    <p>Shows no mercy to tables</p>
+  </section>
+  <section>
+    <h2>awk</h2>
+    <p>BEGIN and END blocks at start and end of program; init teardown</p>
+    <p>
+      Program lines are in
+      <code>/pattern/ { action }</code>
+    </p>
+    <pre>NR > 1 { print } // skip first line, print all cols&#x000A;/2012-10/ { print } // only w/ October this year&#x000A;{ print $1,$2,$5 } // first, 3rd and 5th col&#x000A;{ $2=$3=""; print } // remove 2nd and 3rd col&#x000A;BEGIN { FS=";" OFS="\t" } { print } // ; in, \t out&#x000A;</pre>
+  </section>
+  <section>
+    <h2>tr - translator</h2>
+    <p>tr - substitute or delete characters</p>
+    <pre>tr "\n" "\t" // newlines with tabs&#x000A;tr -d "" // remove all tabs&#x000A;tr '[a-z]' '[A-Z]' // uppercase&#x000A;</pre>
+  </section>
+  <section>
+    <h2>sed</h2>
+    <p>Edits streams of text (stream-edit)</p>
+    <pre>sed 's/\([0-9,]+\) BC/-\1/g' // replace 6000 BC with -6000&#x000A;sed 's/AD //' // cut out AD&#x000A;&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Google Spreadsheets</h2>
+    <p>Pretty useful for citing sources</p>
+    <p>Non-technical people can curate</p>
+    <p>JSONP API (slightly awkward)</p>
+    <pre>https://spreadsheets.google.com/feeds/list/0AmE0pIAjxxOvdEo1QmxBMUd6YWpkbXpPdkpLRmNUSnc/od6/public/basic?alt=json-in-script&callback=?&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Let's get some data</h2>
+    <p>Grab some data you'd like to use</p>
+    <p>With your new unix-fu it can be messy</p>
+  </section>
+  <section>
+    <h2>15 minutes - get data</h2>
+    <img class='hands_on' src='img/hand.svg' />
+    <p>Friendly (JSON) sources of data:</p>
+    <ul>
+      <li>
+        <a href='http://data.gov.uk'>Public data - data.gov.uk</a>
+      </li>
+      <li>
+        <a href='http://musicbrainz.org/'>Music Brainz - Open data on music</a>
+      </li>
+      <li>
+        <a href='http://www.freebase.com/'>Freebase - graph of all the things, easy to query</a>
+      </li>
+      <li>
+        <a href='http://numbrary.com/'>Numbrary - numeric open data online</a>
+      </li>
+    </ul>
+  </section>
+  <section>
+    <h2>Designing/sketching your visualisation</h2>
+    <img class='hands_on' src='img/hand.svg' />
+    <p>What is your data saying?</p>
+    <p>What questions does it raise, can it answer?</p>
+    <p>Feel free to form groups.</p>
+    <p>Till 10.30 break</p>
+  </section>
+  <section>
+    <h1>d3.js</h1>
+  </section>
+  <section>
+    <h2>What we're going to learn</h2>
+    <ul id='menu'>
+      <li>d3: what &amp; why</li>
+      <li>Selecting elements</li>
+      <li>Binding data</li>
+      <li>Scales</li>
+      <li>Layouts</li>
+      <li>Questions</li>
+    </ul>
+    <script type='text/javascript'>
+      //<![CDATA[
+        var data = [0.1,0.1,0.1,0.1,0.1,0.2];
+        
+        var colors = d3.scale.linear().domain([0,data.length - 1]).range(["#69C7FF","#ff0000"])
+        var width  = d3.scale.linear().domain([0,0.5]).range(["0%","100%"]);
+        
+        d3.select("#menu").selectAll("li").data(data)
+          .append("div")
+          .style("width",function(d) { return width(d) })
+          .style("height","16")
+          .style("background",function(d,i) { return colors(i) });
+      //]]>
+    </script>
+  </section>
+  <section class='subtitle'>
+    <h2>d3: what &amp; why of d3</h2>
+  </section>
+  <section>
+    <h2>What - comparison</h2>
+    <div id='demo1'>
+      <div class='controls'>
+        <h2>Best at</h2>
+        <div class='radios'></div>
+      </div>
+      <div class='graphs'></div>
+    </div>
+    <script type='text/javascript'>
+      //<![CDATA[
+        var data = [
+          {"name":"jquery", data: [["dom",1], ["svg",0], ["data",0], ["open",0.7 ]]},
+          {"name":"d3", data: [ ["dom",0.6], ["svg",1], ["data",1], ["open",1 ]]},
+          {"name":"highcharts", data:[ ["dom",0], ["svg",0.1], ["data",0.6], ["open",0 ]]},
+          {"name":"raphael", data: [["dom",0], ["svg",1], ["data",0], ["open",0.5 ]]},
+          {"name":"processing", data:[ ["dom",0], ["svg",0], ["data",0.5], ["open",0.2 ]]}
+        ];
+        
+        var titles = {
+          open: "Uses existing APIs",
+          dom: "DOM tools",
+          svg: "SVG tools",
+          data: "Facilities for working with data"
+        };
+        
+        var reorder;
+        // selection behaviour
+        var cats = data[0].data.map(function(d,i) { return { name: d[0], selected: i === 0 } });
+        
+        var radios = d3.select("#demo1 .radios").selectAll("radio").data(cats).enter()
+          .append("label");
+        
+          radios.append("input").attr("name","sort").attr("value",pluck("name")).attr("type","radio").on("change",function(data) {
+            _.each(cats,function(c) { c.selected = false });
+            data.selected = true;
+            reorder();
+          });
+          document.querySelector("#demo1 input[value=dom]").checked = true;
+          radios.append("span").text(function(d) { return titles[d.name] });
+          
+        
+        _.each(data,function(d) {
+          d.dict = _.reduce(d.data,function(h,kv) {
+            h[kv[0]] = kv[1];
+            return h;
+          },{});
+        });
+        
+        var getSelected = function() { for(var c in cats) if(cats[c].selected) return cats[c] };
+        
+        reorder = function() {
+          var selected = getSelected().name;
+          data = _.sortBy(data,function(d) {
+            return -d.dict[selected];
+          });
+          render();
+        };
+        
+        var render = function() {
+        
+          var sections = d3.select("#demo1 .graphs").selectAll("div");
+        
+          var bound = sections.data(data,pluck("name"));
+        
+          // update
+          bound.style("top",function(d,i) {
+            return i * 128 + "px";
+          });
+        
+          var enter = bound.enter()
+                        .append("div")
+                        .style("top",function(d,i) {
+                          return i * 128 + "px";
+                        })
+                        .classed("data-framework",true)
+                        ;
+        
+          enter.append("h2")
+              .text(pluck("name"))
+        
+              ;
+        
+          var colors = d3.scale.category10();
+          var height = d3.scale.linear().domain([0,1]).range([1,600]);
+        
+          var divs = enter.append("div")
+            .classed("graph",true)
+            .selectAll("div")
+            .data(pluck("data"));
+                
+          divs.enter().append("div")
+            .text(pluck(0))
+            .attr("class",pluck(0))
+            .style("background",function(d,i) { return colors(i) })
+            .style("width",_.compose(height,pluck(1)));
+        
+        
+        };
+        
+        reorder();
+      //]]>
+    </script>
+    <style>
+      #demo1 {
+        position: relative;
+        font-size: 0.25em;
+        overflow: auto; }
+        #demo1 .data-framework {
+          -webkit-transition: all 0.5s;
+          position: absolute; }
+        #demo1 h2 {
+          text-align: left;
+          margin: 0 0 0.5em 0; }
+        #demo1 .graphs {
+          margin-left: 2em;
+          width: 40%;
+          height: 100%; }
+        #demo1 .graph {
+          float: left;
+          margin-bottom: 1em; }
+        #demo1 .data-framework {
+          overflow: auto; }
+        #demo1 .controls {
+          float: left;
+          width: 38%;
+          margin-left: 10%; }
+          #demo1 .controls h2 {
+            font-size: 3em; }
+        #demo1 .graphs {
+          float: left;
+          width: 48%; }
+        #demo1 label {
+          display: block;
+          font-size: 2em;
+          line-height: 2em;
+          cursor: pointer; }
+        #demo1 input {
+          margin-right: 2em; }
+    </style>
+  </section>
+  <section>
+    <h2>Philosophy - high level</h2>
+    <p>Toolkit for visualisations, not lots of prebaked ones.</p>
+    <p>Definitely not a charting library.</p>
+  </section>
+  <section>
+    <h2>Philosophy - low level</h2>
+    <p>Don't invent a proprietary API - use SVG, HTML.</p>
+    <p>
+      e.g You'll see
+      <code>&lt;g&gt;</code>
+      elements just like in SVG
+    </p>
+  </section>
+  <section>
+    <h2>Why</h2>
+    <p>You can use what you learn about SVG, HTML and CSS everywhere.</p>
+    <p>Mobile friendly (DOM: everywhere, SVG: iOS, Android Browser 3.0+).</p>
+    <p>Less to learn - not a big scary black box.</p>
+    <p>Use new CSS, HTML and SVG features whenever they're available.</p>
+  </section>
+  <section class='subtitle'>
+    <h2>Selecting elements</h2>
+  </section>
+  <section>
+    <h2>API</h2>
+    <pre>d3.select("body")&#x000A;  .append("h2")&#x000A;  .text("foo")&#x000A;  .transition()&#x000A;    .style("color","red");&#x000A;&#x000A;d3.select("p")&#x000A;  .style("font-size","2em")&#x000A;  .append("span")&#x000A;    .text("I'm a span in a paragraph");&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Chaining</h2>
+    <p>Just like jQuery, we can keep calling methods on the same elements.</p>
+    <p>If we create new elements via append, the context of our chain becomes the new elements.</p>
+    <p>
+      Use
+      <code>transition()</code>
+      to apply changes over time.
+    </p>
+  </section>
+  <section>
+    <h2>Events</h2>
+    <pre>d3.selectAll("input")&#x000A;  .on("change",function(data,index) {&#x000A;    // event handler&#x000A;  });&#x000A;</pre>
+    <p>
+      Again, very similar to jQuery,
+      <code>this</code>
+      being DOM the element.
+    </p>
+    <p>But what are those `data` and `index` parameters...?</p>
+  </section>
+  <section class='subtitle'>
+    <h2>Time to bind some data</h2>
+  </section>
+  <section id='data-demo'>
+    <h2>Data</h2>
+    <ul></ul>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("data-demo",function() {
+          var sections = d3.select("#data-demo ul")
+            .selectAll("li")
+            .data([
+              "d3 shows data by binding it to elements.",
+              "Then to dynamically set attributes *",
+              "It'll be passed to your event handers"
+            ])
+            .enter()
+              .append("li")
+              .style("opacity",0)
+              .text(function(d) { return d }) // * dynamic
+              .transition()
+              .delay(function(d,i) { return i * 1000 })
+              .style("opacity",1)
+        });
+      //]]>
+    </script>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("data-demo",function() {
+          setTimeout(function() {
+            revealCode("data-demo") 
+          },3500);
+        });
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>Joins</h2>
+    <p>In the code for the comparison, before we have any data we select all divs.</p>
+    <p>Why are we binding to elements that don't exist?</p>
+    <pre>var sections = d3.select("#demo1")&#x000A;  .append("div")&#x000A;  .classed("graphs",true)&#x000A;  .selectAll("div")&#x000A;</pre>
+    <p>Why isn't this a waste of time?</p>
+  </section>
+  <section>
+    <h2>Joins: data to elements</h2>
+    <p>d3 has data and elements - Model and View</p>
+    <p>It computes a 'join' - the intersection between the data and the elements</p>
+  </section>
+  <section>
+    <h2>Parts of joins</h2>
+    <p>
+      <code>enter()</code>
+      new data which doesn't yet have an element
+    </p>
+    <p>
+      <code>data()</code>
+      immediately after data call, elements with existing data that has changed
+    </p>
+    <p>
+      <code>exit()</code>
+      elements that no longer have data
+    </p>
+  </section>
+  <section id='change'>
+    <h2>Reflecting change</h2>
+    <p>Three types - new data, change in values, data leaving</p>
+    <div id='change-demo'></div>
+    <button id='change-btn'>
+      Change
+    </button>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("change",function() {
+        var draw = function() {
+          var root = d3.select("#change-demo")
+        
+          var colors = d3.scale.linear().domain([-2,2]).range(["#FF0000","#0000FF"]);
+        
+          var s = root.selectAll("div").data(d3.range(Math.round(Math.random()  * 10)).map(d3.random.normal()));
+        
+          // update method
+          s.transition()
+            .style("color",function(d)  { return colors(d) })
+            .text(I);
+        
+          // data without elements
+          s.enter()
+              .append("div")
+              .style({opacity: 0})
+              .text(I)
+              .transition()
+                .delay(function(d,i) { return i * 250 })
+                .style("color",function(d)  { return colors(d) })
+                .style({opacity: 1})
+        
+          // elements without data
+          s.exit()
+              .transition()
+              .delay(function(d,i) { return i * 250 })
+              .style({opacity: 0})
+              .remove();
+        }
+        d3.select("#change-btn").on("click",draw);
+        draw();
+        });
+      //]]>
+    </script>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("change",function() {
+          setTimeout(function() {
+            revealCode("change") 
+          },2500);
+        });
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>Update</h2>
+    <p>Updates apply when you have both an element and a datum</p>
+    <pre>d3.selectAll("div") // 1 div&#x000A;  .data([1,2,3,4])&#x000A;  // will act on the first div, passing 1&#x000A;  .text(function(d) { &#x000A;    return "I'm updating " + 1 // I'm updating 1&#x000A;   }) &#x000A;</pre>
+  </section>
+  <section>
+    <h2>Enter</h2>
+    <p>New data that doesn't fit into the current selection goes into enter</p>
+    <pre>d3.selectAll("div") // 1 div&#x000A;  .data([1,2,3,4])&#x000A;&#x000A;d3.enter() // will act on [2,3,4], appending 3 divs&#x000A;  .append("div") &#x000A;</pre>
+  </section>
+  <section>
+    <h2>Exit</h2>
+    <p>Elements that no longer have a datum will go into exit</p>
+    <pre>d3.selectAll("div") // 5 divs&#x000A;  .data([1])&#x000A;&#x000A;d3.exit() // will affect the other 4 divs, removing them&#x000A;  .remove()&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Using the data</h2>
+    <p>Most of the d3 selection methods take a function</p>
+    <p>Function will be passed datum and index, and return value is assigned</p>
+    <pre>d3.selectAll("div")&#x000A;  .data(data)&#x000A;  .enter()&#x000A;  .text(function(d,i) {&#x000A;    return d.text&#x000A;  })&#x000A;  .transition()&#x000A;  .delay(function(d,i) {&#x000A;    return i * 1000&#x000A;  });&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Key functions</h2>
+    <p>If we change data, we need a way for d3 (and us) to know it's actually referring to the same thing.</p>
+    <p>Initially datums are identified by index - if we change order, filter etc this breaks.</p>
+    <p>Key fn solves this, identifying that a value is not new, but has moved.</p>
+  </section>
+  <section>
+    <h2>Key function example</h2>
+    <pre>var data = [&#x000A;  {"name":"jquery", data: [["dom",1], ["svg",0], ["data",0], ["open",0.7 ]]},&#x000A;  {"name":"d3", data: [ ["dom",0.8], ["svg",1], ["data",1], ["open",1 ]]},&#x000A;  {"name":"highcharts", data:[ ["dom",0], ["svg",1], ["data",1], ["open",0 ]]},&#x000A;  {"name":"raphael", data: [["dom",0], ["svg",1], ["data",0], ["open",0.5 ]]},&#x000A;  {"name":"processing", data:[ ["dom",0], ["svg",0], ["data",0.5], ["open",0.2 ]]}&#x000A;];&#x000A;&#x000A;var sections = d3.select("#demo1")&#x000A;  .append("div")&#x000A;  .classed("graphs",true)&#x000A;  .selectAll("div").data(data,pluck("name"))&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Hierarchy</h2>
+    <p>We can also reflect a hierarchical set of data in elements</p>
+    <pre>var sections = d3.select("#demo1")&#x000A;  .append("div")&#x000A;  .classed("graphs",true)&#x000A;  .selectAll("div")&#x000A;  .data(data,pluck("name"))&#x000A;&#x000A;// ... enter code&#x000A;&#x000A;var innerSections = sections.enter().append("div")&#x000A;  // 'inner join' - values in each of above datums&#x000A;  .selectAll("div")&#x000A;  .data(pluck("data"));&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Comparison animated charts</h2>
+    <p>In our framework comparison we had a set of 5 frameworks each with 4 attributes</p>
+    <pre>var sections = d3.select("#demo1")&#x000A;  .append("div")&#x000A;  .selectAll("div")&#x000A;  .data( frameworks )&#x000A;&#x000A;var enter = sections.enter()&#x000A;  .append("div") // 5 divs&#x000A;&#x000A;var innerSections = enter.selectAll("div")&#x000A;  .data(pluck("attributes"))&#x000A;  .enter()&#x000A;  .append("div") // 4 divs for each of original&#x000A;  // 20 divs in all, 5 x 4&#x000A;&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Loading data</h2>
+    <p>Don't need to include jQuery - has facilities to load CSV, JSON etc</p>
+    <pre>d3.csv(url,function(csv) {&#x000A;  // remember to parse your data - csv is stringly typed&#x000A;});&#x000A;&#x000A;d3.json(url,function(tastyData) {&#x000A;&#x000A;});&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Munging data</h2>
+    <p>Since d3 supports only a subset of browser, we should have the JS 1.6 array methods - `filter`, `map`, `reduce` etc</p>
+    <p>d3 gives us similar functionality to underscore.js - `nest` for `_.groupBy` etc</p>
+    <p>
+      Lots of other useful methods - `d3.extent` gives max and min -
+      <a href='https://github.com/mbostock/d3/wiki/API-Reference'>API docs</a>
+      worth a read
+    </p>
+  </section>
+  <section class='subtitle'>
+    <h2>Scales</h2>
+  </section>
+  <section>
+    <h2>Functional scales</h2>
+    <p>d3 can create our scales, so we don't need to.</p>
+    <pre>var mapping = d3.scale.linear()&#x000A;  .domain([d3.min(data), d3.max(data)])&#x000A;  .range([0,VISUAL_SIZE_DESIRED]);&#x000A;</pre>
+    <p>Has built in colour scales that look lovely</p>
+  </section>
+  <section>
+    <h2>Ranges and domains</h2>
+    <p>
+      <code>domain([min,max])</code>
+      is the range of input values in our data
+    </p>
+    <p>
+      <code>range([min,max])</code>
+      is a visual representation of that domain
+    </p>
+    <p>We map between them</p>
+    <p>Can be a range of colours, discrete, or custom</p>
+  </section>
+  <section>
+    <h2>Useful scales</h2>
+    <p>
+      <code>d3.scale.log()</code>
+      for diverse, potentially exponential values
+    </p>
+    <p>
+      <code>d3.scale.sqrt()</code>
+      for diverse, positive and negative values
+    </p>
+    <p>
+      <code>d3.scale.category10()</code>
+      nice category colours
+    </p>
+  </section>
+  <section>
+    <h2>How to make d3 menu</h2>
+    <p>Simple colour scale with steps.</p>
+    <pre>var data = [0.05,0.1,0.1,0.1,0.1,0.1,0.45];&#x000A;&#x000A;var colors = d3.scale.linear().domain([0,data.length - 1]).range(["#69C7FF","#3593E6"]);&#x000A;&#x000A;d3.select("#menu").selectAll("li").data(data)&#x000A;  .append("div")&#x000A;  .style("background",function(d,i) { return colors(i) });&#x000A;</pre>
+  </section>
+  <section class='subtitle'>
+    <h2>Layouts</h2>
+  </section>
+  <section>
+    <h2>Layouts</h2>
+    <p>Pure data: they don't do the laying out for you</p>
+    <p>Most generic part of a layout is the algorithm to decide relative sizes/positions, that's what d3 gives you.</p>
+    <p>Bound to the data, accessed as if you had a `dx` and `dy` in your data.</p>
+  </section>
+  <section id='layout-demo'>
+    <h2>Histogram</h2>
+    <div id='histogram-1'></div>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("layout-demo",_.once(function() {
+        
+          var randomData = d3.range(1000)
+            .map(d3.random.irwinHall(10));
+        
+          var width = 800, height = 500, padding = 10;
+        
+          var x = d3.scale.linear()
+              .domain([0, 1])
+              .range([0, width]);
+        
+          var data = d3.layout.histogram()
+              .bins(x.ticks(20))
+               (randomData);
+        
+          var y = d3.scale.linear()
+              .domain([0, d3.max(data, function(d) { return d.y; })])
+              .range([0, height]);
+        
+          var svg = d3.select("#histogram-1").append("svg")
+              .attr("width", width)
+              .attr("height", height);
+        
+          svg.selectAll("rect")
+              .data(data)
+            .enter()
+              .append("rect")
+              // move elements down by the difference between their output and height - 0% needs to move down 100%
+              .attr("transform", function(d) { return "translate(" + x(d.x) + "," + (height - y(d.y)) + ")"; })
+              .attr("width", x(data[0].dx) - padding)
+              .attr("height", function(d) { return y(d.y); });
+        
+        }));
+      //]]>
+    </script>
+    <style>
+      #histogram-1 {
+        float: left;
+        width: 28%; }
+      
+      #layout-demo .demo-code {
+        float: left;
+        width: 70%; }
+      #layout-demo pre {
+        padding: 0;
+        margin: 0; }
+    </style>
+  </section>
+  <section>
+    <h2>Create layout</h2>
+    <pre>var randomData = d3.range(1000)&#x000A;  .map(d3.random.irwinHall(10));&#x000A;&#x000A;var width = 800, height = 500, padding = 10;&#x000A;&#x000A;var x = d3.scale.linear()&#x000A;    .domain([0, 1])&#x000A;    .range([0, width]);&#x000A;&#x000A;var data = d3.layout.histogram()&#x000A;    .bins(x.ticks(20))&#x000A;     (randomData);&#x000A;&#x000A;var y = d3.scale.linear()&#x000A;    .domain([0, d3.max(data, function(d) { return d.y; })])&#x000A;    .range([0, height]);&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Bind layout to data</h2>
+    <pre>var svg = d3.select("#histogram-1").append("svg")&#x000A;.attr("width", width)&#x000A;.attr("height", height);&#x000A;&#x000A;svg.selectAll("rect")&#x000A;    .data(data)&#x000A;  .enter()&#x000A;    .append("rect")&#x000A;    // move elements down by the difference between their output and height - 0% needs to move down 100%&#x000A;    .attr("transform", function(d) { return "translate(" + x(d.x) + "," + (height - y(d.y)) + ")" })&#x000A;    .attr("width", x(data[0].dx) - padding)&#x000A;    .attr("height", function(d) { return y(d.y); });&#x000A;&#x000A;</pre>
+  </section>
+  <section>
+    <h2>d3 summary</h2>
+    <p>
+      <code>d3.select|selectAll()</code>
+      to select elements
+    </p>
+    <p>
+      <code>.data(data,keyFn)</code>
+      to bind data, returns update
+    </p>
+    <p>
+      <code>.enter() .exit()</code>
+      to control data in and out
+    </p>
+    <p>
+      Scales to map data value to visualisation
+    </p>
+    <p>
+      Layouts to do the generic work of various visualisations
+    </p>
+  </section>
+  <section>
+    <h2>d3 questions</h2>
+    <p>Anything that you'd be worried about getting d3 on the page?</p>
+    <p>Working with the DOM or SVG?</p>
+    <p>Binding data?</p>
+    <p>Getting data onto the page?</p>
+    <p>Using scales or layouts?</p>
+  </section>
+  <section class='subtitle'>
+    <h2 style='font-size:1.5em'>Tell me and I'll forget;<br/><br/> show me and I may remember;<br /><br/> involve me and I'll understand.</h2>
+  </section>
+  <section>
+    <h1>Making your visualisations!</h1>
+    <img class='hands_on' src='img/hand.svg' />
+    <p>Till 15.00 break</p>
+    <p>Ask me for any help about d3, Javascript, terminal</p>
+    <p>
+      Share visualisations via
+      <a>#FOWA</a>
+      <a>#FOM12</a>
+    </p>
+  </section>
+  <section>
+    <h1>three.js</h1>
+  </section>
+  <section>
+    <h2>What can we do with an extra dimension?</h2>
+    <p>Use with restraint - more distraction</p>
+    <p>Can easily get 3 dimensions into a graph - contour or colour</p>
+  </section>
+  <section id='three-d'>
+    <h1>But it is cool</h1>
+    <div height='600' id='three-demo' width='800'></div>
+    <script src='three.js'></script>
+    <script src='3d.js'></script>
+    <style>
+      #three-d {
+        position: relative; }
+        #three-d h1 {
+          position: relative;
+          z-index: 2; }
+      
+      #three-demo {
+        position: absolute;
+        top: 0;
+        left: 0; }
+    </style>
+  </section>
+  <section>
+    <h2>Intro to three.js</h2>
+    <p>
+      <code>Renderer</code>
+      draws - can be WebGL, Canvas
+    </p>
+    <p>
+      <code>Camera</code>
+      our point of view within a scene - it can move
+    </p>
+    <p>
+      <code>Scene</code>
+      a 'scene graph' of JS objects in the scene
+    </p>
+    <p>
+      <code>Mesh</code>
+      a combination of Geometry - a 3d shape - and a material
+    </p>
+    <p>
+      <code>Material</code>
+      a texture or simple colour to cover a Geometry
+    </p>
+  </section>
+  <style>
+    .render-target canvas {
+      margin: 0 auto;
+      display: block; }
+  </style>
+  <section id='first-three'>
+    <h2>Your first three.js scene</h2>
+    <div class='render-target'></div>
+    <script type='text/javascript'>
+      //<![CDATA[
+        var basicScene = function(sel,fn) {
+          var container = document.querySelector(sel);
+        
+          var fieldOfView = 45,
+              nearClip = 0.1,
+              farClip = 10000;
+        
+          var width = 600,
+              height = 600,
+              aspectRatio = width/height;
+        
+          var renderer = new THREE.WebGLRenderer();
+          var camera = new THREE.PerspectiveCamera(
+            fieldOfView,
+            aspectRatio,
+            nearClip,
+            farClip
+          );
+        
+          camera.position.z = 100;
+        
+          var scene = new THREE.Scene();
+        
+          renderer.setSize(width,height);
+        
+          container.appendChild(renderer.domElement);
+        
+          fn && fn(renderer,scene,camera);
+        };
+        onPage("first-three",function() {
+          basicScene("#first-three .render-target",function(renderer,scene,camera) {
+         
+            var cubey = new THREE.Mesh(
+              new THREE.CubeGeometry(25, 25, 25),
+              new THREE.MeshBasicMaterial({
+                color: 0x0000CC
+              })
+            );
+            scene.add(cubey); 
+        
+            renderer.render(scene,camera);
+        
+          });
+        });
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>First scene empty</h2>
+    <pre>var container = document.querySelector(sel);&#x000A;&#x000A;var fieldOfView = 45, nearClip = 0.1, farClip = 10000;&#x000A;&#x000A;var width = 600, height = 600, aspectRatio = width/height;&#x000A;&#x000A;var renderer = new THREE.WebGLRenderer();&#x000A;var camera = new THREE.PerspectiveCamera(&#x000A;  fieldOfView, aspectRatio, nearClip, farClip&#x000A;);&#x000A;&#x000A;camera.position.z = 100;&#x000A;&#x000A;var scene = new THREE.Scene();&#x000A;&#x000A;renderer.setSize(width,height);&#x000A;container.appendChild(renderer.domElement);&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Add object to first scene</h2>
+    <pre>  var cubey = new THREE.Mesh(&#x000A;    new THREE.CubeGeometry(25, 25, 25),&#x000A;    new THREE.MeshBasicMaterial({&#x000A;      color: 0x0000CC&#x000A;    })&#x000A;  );&#x000A;  scene.add(cubey); &#x000A;  &#x000A;  // actually draw the scene&#x000A;  // from the point of view of our camera&#x000A;  renderer.render(scene,camera);&#x000A;</pre>
+  </section>
+  <section id='second-three'>
+    <h2>Your second three.js scene</h2>
+    <div class='render-target'></div>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("second-three",function() {
+          basicScene("#second-three .render-target",function(renderer,scene,camera){
+            var cubey = new THREE.Mesh(
+              new THREE.CubeGeometry(25, 25, 25),
+              new THREE.MeshBasicMaterial({
+                color: 0x0000CC
+              })
+            );
+            scene.add(cubey); 
+            var clock = THREE.Clock();
+            var tick = function(t) {
+              requestAnimationFrame(tick);
+              cubey.rotation.y = t/1000;
+              renderer.render(scene,camera);
+            };
+            tick();
+          });
+        });
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>Animation</h2>
+    <p>
+      Using
+      <code>requestAnimationFrame</code>
+      <span>: a souped up</span>
+      <code>setInterval</code>
+    </p>
+    <pre>var tick = function(t) {&#x000A;  requestAnimationFrame(tick);&#x000A;  cubey.rotation.y = t/1000;&#x000A;  renderer.render(scene,camera);&#x000A;};&#x000A;tick();&#x000A;</pre>
+  </section>
+  <section id='third-three'>
+    <h2>Your third three.js scene</h2>
+    <div class='render-target'></div>
+    <script type='text/javascript'>
+      //<![CDATA[
+        onPage("third-three",function() {
+          basicScene("#third-three .render-target",function(renderer,scene,camera){
+            var cubey = new THREE.Mesh(
+              new THREE.CubeGeometry(25, 25, 25),
+              new THREE.MeshPhongMaterial({
+                color: 0x0000CC
+              })
+            );
+            scene.add(cubey); 
+            var light = new THREE.PointLight();
+            light.position.x = 50;
+            light.position.y = 50;
+            light.position.z = 25;
+            scene.add(light);
+        
+            var clock = THREE.Clock();
+            var tick = function(t) {
+              requestAnimationFrame(tick);
+              cubey.rotation.y = t/1000;
+              renderer.render(scene,camera);
+            };
+            tick();
+          });
+        });
+      //]]>
+    </script>
+  </section>
+  <section>
+    <h2>Lights for our camera and action</h2>
+    <pre>var cubey = new THREE.Mesh(&#x000A;  new THREE.CubeGeometry(25, 25, 25),&#x000A;  new THREE.MeshPhongMaterial({&#x000A;    color: 0x0000CC&#x000A;  })&#x000A;);&#x000A;scene.add(cubey); &#x000A;var light = new THREE.PointLight();&#x000A;light.position.x = 50;&#x000A;light.position.y = 50;&#x000A;light.position.z = 25;&#x000A;scene.add(light);&#x000A;</pre>
+  </section>
+  <section>
+    <h2>Combining with d3</h2>
+    <pre>// create scales like normal - data to visual range&#x000A;d3.scale.linear()&#x000A;  .domain(d3.extent(_.pluck(data,key)))&#x000A;  .range([0,rangeMax]);&#x000A;&#x000A;// here we're mapping 3 variables to x,y,z, using scales&#x000A;[["impressions","x"],["clicks","z"],["orders","y"]].forEach(function(pair) {&#x000A;  var key = pair[0], dim = pair[1];&#x000A;  point.position[dim] = scales[key](datum[key]);&#x000A;});&#x000A;</pre>
+  </section>
+  <section>
+    <h2>three.js summary</h2>
+    <p>Our objects are Meshes with Materials (non-Basic for light) and Geometry</p>
+    <p>We look at a Scene of Objects via a Camera</p>
+    <p>The scene is drawn by a Renderer from the POV of a Camera</p>
+    <p>Using requestAnimationFrame and Clock we can animate</p>
+    <p>Nothing to stop us using d3 for data</p>
+  </section>
+  <section>
+    <h2>Finish the visualisations!</h2>
+    <img class='hands_on' src='img/hand.svg' />
+    <p>Continue with existing 2D animations, or go 3D</p>
+    <p>
+      Share visualisations via
+      <a>#FOWA</a>
+      <a>#FOM12</a>
+    </p>
+  </section>
+  <script src='prettify.js'></script>
+  <script src='main.js'></script>
+</body>
